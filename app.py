@@ -520,3 +520,273 @@ def main_app():
                 .reset_index()
                 .rename(columns={"klasse":"Klasse","gesamt":"Bücher gesamt"})
             )
+fig = px.bar(
+                df_plot, x="Klasse", y="Bücher gesamt",
+                color="Bücher gesamt",
+                color_continuous_scale="Blues",
+                title="Gesamtbestand nach Klasse",
+                height=350,
+            )
+            fig.update_layout(
+                showlegend=False,
+                margin=dict(l=10,r=10,t=40,b=30),
+                plot_bgcolor="rgba(0,0,0,0)",
+                xaxis=dict(tickangle=-45),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("---")
+        if st.button("🔄 Daten neu laden", use_container_width=True):
+            st.session_state["reload"] = True
+            st.rerun()
+
+    # ── Kopfzeile ─────────────────────────────────────────────────────────────
+    st.title(APP_TITLE)
+
+    # ── Alarm-Banner ─────────────────────────────────────────────────────────
+    alarm_df = df[df["alarm"] == True] if not df.empty else pd.DataFrame()
+    if not alarm_df.empty:
+        with st.expander(
+            f"⚠️ NACHBESTELL-ALARM: {len(alarm_df)} Buch/Bücher müssen nachbestellt werden!",
+            expanded=True
+        ):
+            st.error("Die folgenden Bücher reichen für das nächste Schuljahr **nicht** aus "
+                     f"(verfügbar < Bedarf, Mindestlagerbestand {RESERVE} Exemplare eingerechnet):")
+            alarm_show = alarm_df[[
+                "isbn","titel","fach","klasse",
+                "umlauf_gesamt","lager","verfuegbar_next","bedarf_next","differenz",
+                "bestellbar","notizen"
+            ]].copy()
+            alarm_show.columns = [
+                "ISBN","Titel","Fach","Klasse",
+                "Umlauf","Lager","Verfügbar nächstes Jahr","Bedarf","Fehlend",
+                "Bestellbar","Notizen"
+            ]
+            st.dataframe(
+                alarm_show,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    tab_liste, tab_neu, tab_edit, tab_details = st.tabs([
+        "📋 Bestandsliste",
+        "➕ Buch hinzufügen",
+        "✏️ Buch bearbeiten / löschen",
+        "🔎 Buch-Details",
+    ])
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  TAB 1: BESTANDSLISTE
+    # ─────────────────────────────────────────────────────────────────────────
+    with tab_liste:
+        st.subheader("Aktueller Buchbestand")
+
+        # Filter anwenden
+        df_view = df.copy() if not df.empty else df
+        if not df_view.empty:
+            if f_fach != "Alle":
+                df_view = df_view[df_view["fach"] == f_fach]
+            if f_klasse != "Alle":
+                df_view = df_view[
+                    df_view["klasse"].str.contains(f_klasse, na=False) |
+                    df_view["umlauf_klassen"].str.contains(f_klasse, na=False)
+                ]
+            if f_alarm:
+                df_view = df_view[df_view["alarm"] == True]
+            if f_text:
+                mask = (
+                    df_view["titel"].str.contains(f_text, case=False, na=False) |
+                    df_view["isbn"].str.contains(f_text, case=False, na=False)
+                )
+                df_view = df_view[mask]
+
+        if df_view.empty:
+            st.info("Keine Bücher gefunden. Füge über den Tab '➕ Buch hinzufügen' dein erstes Buch hinzu.")
+        else:
+            # Anzeige-Spalten und farbige Formatierung
+            show_cols = [
+                "isbn","titel","fach","klasse","doppeljahrgang",
+                "umlauf_klassen","umlauf_gesamt","lager","gesamt",
+                "bedarf_next","verfuegbar_next","differenz",
+                "anschaffung","bestellbar","notizen"
+            ]
+            display_df = df_view[show_cols].copy()
+            display_df.columns = [
+                "ISBN","Titel","Fach","Klasse","Doppeljahrgang",
+                "Umlauf pro Klasse","Umlauf Σ","Lager","Gesamt",
+                "Bedarf n.J.","Verfügbar n.J.","Differenz",
+                "Anschaffung","Bestellbar","Notizen"
+            ]
+
+            def style_row(row):
+                if row["Differenz"] < 0:
+                    return ["background-color: #ffe0e0"] * len(row)
+                elif row["Differenz"] < 5:
+                    return ["background-color: #fff3cd"] * len(row)
+                return [""] * len(row)
+
+            styled = display_df.style.apply(style_row, axis=1)
+            st.dataframe(styled, use_container_width=True, hide_index=True, height=500)
+
+            col_a, col_b, col_c = st.columns(3)
+            col_a.metric("Bücher gesamt", len(df_view))
+            col_b.metric("Exemplare gesamt", int(df_view["gesamt"].sum()))
+            col_c.metric("🔴 Nachbestellen",
+                         int(df_view["alarm"].sum()),
+                         delta_color="inverse")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  TAB 2: NEUES BUCH HINZUFÜGEN
+    # ─────────────────────────────────────────────────────────────────────────
+    with tab_neu:
+        buch_formular(db, existing=None)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  TAB 3: BUCH BEARBEITEN / LÖSCHEN
+    # ─────────────────────────────────────────────────────────────────────────
+    with tab_edit:
+        st.subheader("Buch bearbeiten oder löschen")
+
+        if df.empty:
+            st.info("Noch keine Bücher vorhanden.")
+        else:
+            # Auswahlbox
+            buch_optionen = {
+                f"{b['titel']} (ISBN: {b['isbn']})": b
+                for b in buecher
+            }
+            auswahl_label = st.selectbox(
+                "Buch auswählen",
+                list(buch_optionen.keys()),
+                key="edit_select"
+            )
+            gewaehltes_buch = buch_optionen[auswahl_label]
+
+            col_edit, col_del = st.columns([3, 1])
+            with col_edit:
+                st.markdown("#### ✏️ Daten bearbeiten")
+                buch_formular(db, existing=gewaehltes_buch)
+
+            with col_del:
+                st.markdown("#### 🗑️ Buch löschen")
+                st.warning(
+                    f"**{gewaehltes_buch['titel']}**\n\n"
+                    f"ISBN: {gewaehltes_buch['isbn']}\n\n"
+                    "Diese Aktion kann nicht rückgängig gemacht werden!"
+                )
+                confirm = st.checkbox(
+                    "Ja, ich möchte dieses Buch unwiderruflich löschen",
+                    key="confirm_delete"
+                )
+                if st.button("🗑️ Endgültig löschen", disabled=not confirm,
+                             use_container_width=True, type="primary"):
+                    if delete_book(db, gewaehltes_buch["isbn"]):
+                        st.success(f"✅ '{gewaehltes_buch['titel']}' wurde gelöscht.")
+                        st.session_state["reload"] = True
+                        st.rerun()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  TAB 4: BUCH-DETAILS (Umlauf pro Klasse + Planung)
+    # ─────────────────────────────────────────────────────────────────────────
+    with tab_details:
+        st.subheader("🔎 Detailansicht & Jahresplanung")
+
+        if df.empty:
+            st.info("Noch keine Bücher vorhanden.")
+        else:
+            detail_optionen = {
+                f"{b['titel']} (ISBN: {b['isbn']})": b
+                for b in buecher
+            }
+            detail_label = st.selectbox(
+                "Buch auswählen",
+                list(detail_optionen.keys()),
+                key="detail_select"
+            )
+            b = berechne_felder(detail_optionen[detail_label].copy())
+
+            # Kopfzeile
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Umlauf gesamt", b["umlauf_gesamt"])
+            col2.metric("Lager", b["lager"],
+                        help=f"Mindestlagerbestand: {RESERVE} Exemplare")
+            col3.metric("Gesamtbestand", b["gesamt"])
+            col4.metric(
+                "Verfügbar nächstes Jahr",
+                b["verfuegbar_next"],
+                delta=b["differenz"],
+                delta_color="normal",
+                help="Umlauf (kommt zurück) + Lager über Reserve"
+            )
+
+            # Status-Box
+            if b["alarm"]:
+                st.error(
+                    f"⚠️ **NACHBESTELLBEDARF**: Es fehlen **{abs(b['differenz'])} Exemplare**! "
+                    f"(Bedarf: {b['bedarf_next']}, Verfügbar: {b['verfuegbar_next']})\n\n"
+                    f"Bestellbar im Katalog: **{'Ja' if b['bestellbar'] else 'Nein'}**"
+                )
+            elif b["differenz"] < RESERVE:
+                st.warning(
+                    f"🟡 Knappe Reserve: nur {b['differenz']} Exemplare über Bedarf. "
+                    f"Ggf. nachbestellen."
+                )
+            else:
+                st.success(
+                    f"✅ Bestand ausreichend. Überschuss: {b['differenz']} Exemplare."
+                )
+
+            # Umlauf pro Klasse als Tabelle + Balkendiagramm
+            uk = b.get("umlauf_klassen") or {}
+            if uk:
+                st.markdown("#### Umlauf nach Klasse")
+                uk_df = pd.DataFrame(
+                    [(k, v) for k, v in sorted(uk.items())],
+                    columns=["Klasse", "Exemplare im Umlauf"]
+                )
+                c1, c2 = st.columns([1, 2])
+                with c1:
+                    st.dataframe(uk_df, hide_index=True, use_container_width=True)
+                with c2:
+                    fig2 = px.bar(
+                        uk_df, x="Klasse", y="Exemplare im Umlauf",
+                        color="Exemplare im Umlauf",
+                        color_continuous_scale="Blues",
+                        title=f"Umlauf: {b['titel']}",
+                    )
+                    fig2.update_layout(showlegend=False,
+                                       plot_bgcolor="rgba(0,0,0,0)")
+                    st.plotly_chart(fig2, use_container_width=True)
+
+            # Metadaten
+            st.markdown("#### 📋 Buchdetails")
+            meta_col1, meta_col2 = st.columns(2)
+            with meta_col1:
+                st.markdown(f"**Fach:** {b.get('fach','')}")
+                st.markdown(f"**Klasse(n):** {b.get('klasse','')}")
+                st.markdown(f"**Doppeljahrgang:** {'Ja' if b.get('doppeljahrgang') else 'Nein'}")
+                st.markdown(f"**ISBN:** {b.get('isbn','')}")
+            with meta_col2:
+                st.markdown(f"**Anschaffung:** {b.get('anschaffung','')}")
+                st.markdown(f"**Im Katalog bestellbar:** {'✅ Ja' if b.get('bestellbar') else '❌ Nein'}")
+                st.markdown(f"**Notizen:** {b.get('notizen','–')}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def run():
+    # Session-State initialisieren
+    if "logged_in" not in st.session_state:
+        st.session_state["logged_in"] = False
+
+    if not st.session_state["logged_in"]:
+        render_login_page()
+    else:
+        main_app()
+
+
+if __name__ == "__main__":
+    run()
