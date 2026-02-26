@@ -519,4 +519,4 @@ def main_app():
                 .sum()
                 .reset_index()
                 .rename(columns={"klasse":"Klasse","gesamt":"Bücher gesamt"})
- 
+            )
