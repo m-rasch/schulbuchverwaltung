@@ -517,10 +517,16 @@ def main_app():
             df_plot = (
                 df.groupby("klasse")["gesamt"]
                 .sum()
+        st.markdown("---")
+        st.subheader("📊 Bestand pro Klasse")
+        if not df.empty:
+            df_plot = (
+                df.groupby("klasse")["gesamt"]
+                .sum()
                 .reset_index()
                 .rename(columns={"klasse":"Klasse","gesamt":"Bücher gesamt"})
             )
-fig = px.bar(
+            fig = px.bar(
                 df_plot, x="Klasse", y="Bücher gesamt",
                 color="Bücher gesamt",
                 color_continuous_scale="Blues",
