@@ -57,7 +57,7 @@ ALLE_KLASSEN = [
 
 ALLE_FAECHER = [
     "Mathematik","Deutsch","Englisch","Französisch","Latein","Spanisch",
-    "Physik","Chemie","Biologie","Geographie","Geschichte","Politik",
+    "Physik","Chemie","Biologie","Mensch-Natur-Technik","Geographie","Geschichte","Politik",
     "Ethik","Religion","Musik","Kunst","Sport","Informatik","Wirtschaft",
     "Sonstiges",
 ]
