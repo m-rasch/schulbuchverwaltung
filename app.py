@@ -287,7 +287,7 @@ def export_pdf(df: pd.DataFrame) -> bytes:
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, "Schulbuchverwaltung – Bestandsliste", ln=True, align="C")
+    pdf.cell(0, 10, "Schulbuchverwaltung - Bestandsliste", ln=True, align="C")
     pdf.set_font("Helvetica", "", 8)
     pdf.cell(0, 6, f"Stand: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
              ln=True, align="C")
